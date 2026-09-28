@@ -822,6 +822,7 @@ static void apply_style(App& a) {
     st.Colors[ImGuiCol_HeaderHovered] = ImVec4(acc.x, acc.y, acc.z, 0.45f);
     st.Colors[ImGuiCol_TableHeaderBg] = ImVec4(1, 1, 1, 0.06f);
     st.Colors[ImGuiCol_PopupBg] = ImVec4(0.08f, 0.09f, 0.11f, 0.97f);
+    st.Colors[ImGuiCol_TextDisabled] = ImVec4(0.74f, 0.76f, 0.80f, 1.0f);  // stays legible over background images
 }
 
 int main(int argc, char** argv) {

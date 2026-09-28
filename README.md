@@ -2,7 +2,7 @@
 
 A small always-on-top, see-through GPU monitor for Linux. Built with Dear ImGui, GLFW and OpenGL 3.3, in C++17.
 
-![GPU HUD: compact English view, and the Simplified Chinese view with the settings panel and a tiled background](docs/screenshot.png)
+![GPU HUD: compact English view, and the Simplified Chinese view with the settings panel and a background picture (Fill mode)](docs/screenshot.png)
 
 - GPU utilization, VRAM, temperature, power and clock, with a history graph for each GPU
 - System RAM, CPU and swap
