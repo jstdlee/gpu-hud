@@ -19,4 +19,6 @@ fetch glfw https://github.com/glfw/glfw.git "$GLFW_REV"
 mkdir -p "$tp/stb"
 [ -f "$tp/stb/stb_image.h" ] || curl -fsSL -o "$tp/stb/stb_image.h" \
     "https://raw.githubusercontent.com/nothings/stb/$STB_REV/stb_image.h"
+[ -f "$tp/stb/stb_image_write.h" ] || curl -fsSL -o "$tp/stb/stb_image_write.h" \
+    "https://raw.githubusercontent.com/nothings/stb/$STB_REV/stb_image_write.h"
 echo "third_party ready"

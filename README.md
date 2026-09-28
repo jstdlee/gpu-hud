@@ -2,6 +2,8 @@
 
 A small always-on-top, see-through GPU monitor for Linux. Built with Dear ImGui, GLFW and OpenGL 3.3, in C++17.
 
+![GPU HUD: compact English view, and the Simplified Chinese view with the settings panel and a tiled background](docs/screenshot.png)
+
 - GPU utilization, VRAM, temperature, power and clock, with a history graph for each GPU
 - System RAM, CPU and swap
 - The top GPU process, plus a sortable list of GPU processes (click the Mem or SM column header)
@@ -44,6 +46,7 @@ sudo apt install cmake g++ libx11-dev libxrandr-dev libxinerama-dev libxcursor-d
 | Background image | Settings → Browse… (zenity/kdialog), type a path, or drag and drop a file |
 | Print report to stdout | `gpu-hud --report` |
 | Ignore saved settings | `gpu-hud --reset` |
+| Save the window as a PNG (with alpha) | `gpu-hud --screenshot out.png --delay 8` |
 
 Settings are saved to `~/.config/gpu-hud/config.ini`.
 
@@ -57,3 +60,7 @@ cmake --install build --prefix ~/.local
 - For real transparency you need a compositing window manager. GNOME, KDE and most modern desktops have one. Without it, the background is drawn opaque.
 - Wayland has no protocol for always-on-top or for a window positioning itself, so the app runs through XWayland (the X11 backend) on purpose.
 - The code is split into `metrics.cpp` (NVML/sysfs/procfs sampling in a background thread), `sysinfo.cpp` (hardware inventory), `i18n.cpp` (translations) and `main.cpp` (UI). This keeps the Linux-specific parts separate for future Windows/macOS ports.
+
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE). The third-party libraries (Dear ImGui: MIT, GLFW: zlib, stb: public domain/MIT) are fetched at build time and keep their own licenses.

@@ -36,6 +36,8 @@
 #define STBI_ONLY_GIF
 #define STBI_ONLY_TGA
 #include "stb_image.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 // ---------------------------------------------------------------------------
 // Config (~/.config/gpu-hud/config.ini)
@@ -779,6 +781,23 @@ static void update_history(App& a) {
     }
 }
 
+// Read the back buffer (premultiplied alpha) and write a straight-alpha PNG.
+static void save_screenshot(const std::string& path, int w, int h) {
+    std::vector<unsigned char> px((size_t)w * h * 4), out(px.size());
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            const unsigned char* s = &px[((size_t)(h - 1 - y) * w + x) * 4];
+            unsigned char* d = &out[((size_t)y * w + x) * 4];
+            int a = s[3];
+            for (int c = 0; c < 3; c++) d[c] = a ? (unsigned char)std::min(255, s[c] * 255 / a) : 0;
+            d[3] = (unsigned char)a;
+        }
+    if (stbi_write_png(path.c_str(), w, h, 4, out.data(), w * 4)) fprintf(stderr, "saved %s (%dx%d)\n", path.c_str(), w, h);
+    else fprintf(stderr, "failed to write %s\n", path.c_str());
+}
+
 static void apply_style(App& a) {
     ImGuiStyle& st = ImGui::GetStyle();
     ImGui::StyleColorsDark(&st);
@@ -809,14 +828,19 @@ int main(int argc, char** argv) {
     App app;
     g_app = &app;
     bool reset = false, report = false;
+    std::string shot_path;
+    double shot_delay = 6.0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--reset")) reset = true;
         else if (!strcmp(argv[i], "--report")) report = true;
         else if (!strcmp(argv[i], "--settings")) app.show_settings = true;
+        else if (!strcmp(argv[i], "--screenshot") && i + 1 < argc) shot_path = argv[++i];
+        else if (!strcmp(argv[i], "--delay") && i + 1 < argc) shot_delay = atof(argv[++i]);
         else if (!strcmp(argv[i], "--help") || !strcmp(argv[i], "-h")) {
             printf("Usage: gpu-hud [--reset] [--report]\n  --reset   ignore saved settings\n"
                    "  --report  print the full system report (same as \"Copy all\") and exit\n"
                    "  --settings  start with the settings panel open\n"
+                   "  --screenshot FILE  save the window (with alpha) to a PNG after --delay SEC (default 6) and exit\n"
                    "Drag to move, drag bottom-right corner to resize, right-click for settings.\n");
             return 0;
         }
@@ -941,6 +965,10 @@ int main(int argc, char** argv) {
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        if (!shot_path.empty() && frame > 3 && glfwGetTime() >= shot_delay) {
+            save_screenshot(shot_path, fw, fh);
+            glfwSetWindowShouldClose(app.win, GLFW_TRUE);
+        }
         glfwSwapBuffers(app.win);
 
         // Fit the OS window to the content (height auto, width from config).
