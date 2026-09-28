@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=GPU HUD
+Name[zh_CN]=GPU 监视器
+Name[zh_TW]=GPU 監視器
+Name[ja]=GPU モニター
+Name[ko]=GPU 모니터
+Comment=Always-on-top GPU, VRAM and RAM monitor
+Comment[zh_CN]=置顶显示 GPU、显存与内存占用
+Comment[zh_TW]=置頂顯示 GPU、顯存與記憶體使用
+Comment[ja]=GPU・VRAM・RAM 使用率を常に最前面で表示
+Exec=gpu-hud
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+StartupWMClass=gpu-hud
