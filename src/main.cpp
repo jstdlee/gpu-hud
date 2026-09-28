@@ -42,6 +42,7 @@
 // ---------------------------------------------------------------------------
 // Config (~/.config/gpu-hud/config.ini)
 enum ImgMode { IMG_TILE, IMG_STRETCH, IMG_FILL, IMG_CENTER };
+enum ProcCol { PC_NAME, PC_PID, PC_MEM, PC_SM, PC_CPU, PC_COUNT };
 
 struct Config {
     std::string lang;  // empty = follow $LANG
@@ -57,7 +58,8 @@ struct Config {
     bool lock_pos = false;
     bool show_procs = true;
     bool show_graph = true;
-    int sort_by = 0;  // 0 = GPU memory, 1 = SM utilization
+    int sort_col = PC_MEM;  // process table sort column (ProcCol)
+    bool sort_desc = true;
     int refresh_ms = 1000;
     float font_size = 15.0f;
     int width = 380;
@@ -94,7 +96,8 @@ static void load_config(Config& c) {
         else if (k == "lock_pos") c.lock_pos = v == "1";
         else if (k == "show_procs") c.show_procs = v == "1";
         else if (k == "show_graph") c.show_graph = v == "1";
-        else if (k == "sort_by") c.sort_by = std::stoi(v) ? 1 : 0;
+        else if (k == "sort_col") c.sort_col = std::clamp(std::stoi(v), 0, PC_COUNT - 1);
+        else if (k == "sort_desc") c.sort_desc = v == "1";
         else if (k == "refresh_ms") c.refresh_ms = std::clamp(std::stoi(v), 200, 10000);
         else if (k == "font_size") c.font_size = std::clamp(std::stof(v), 10.0f, 32.0f);
         else if (k == "width") c.width = std::clamp(std::stoi(v), 240, 2000);
@@ -111,7 +114,7 @@ static void save_config(const Config& c) {
       << "accent=" << c.accent[0] << "," << c.accent[1] << "," << c.accent[2] << "\n"
       << "bg_image=" << c.bg_image << "\nimg_mode=" << c.img_mode << "\nimg_scale=" << c.img_scale
       << "\nimg_opacity=" << c.img_opacity << "\non_top=" << c.on_top << "\nlock_pos=" << c.lock_pos
-      << "\nshow_procs=" << c.show_procs << "\nshow_graph=" << c.show_graph << "\nsort_by=" << c.sort_by << "\nrefresh_ms=" << c.refresh_ms
+      << "\nshow_procs=" << c.show_procs << "\nshow_graph=" << c.show_graph << "\nsort_col=" << c.sort_col << "\nsort_desc=" << c.sort_desc << "\nrefresh_ms=" << c.refresh_ms
       << "\nfont_size=" << c.font_size << "\nwidth=" << c.width << "\nx=" << c.x << "\ny=" << c.y << "\n";
 }
 
@@ -270,6 +273,7 @@ struct App {
 
 static App* g_app = nullptr;
 static volatile sig_atomic_t g_quit = 0;
+static void sort_procs(App& a);
 
 static ImU32 accent_col(const App& a, float alpha = 1.0f) {
     return ImGui::GetColorU32(ImVec4(a.cfg.accent[0], a.cfg.accent[1], a.cfg.accent[2], alpha));
@@ -369,8 +373,9 @@ static std::string build_report(App& a) {
     o << "\n## " << tr(S_TOP_PROCS) << "\n";
     if (s.procs.empty()) o << tr(S_NO_PROC) << "\n";
     for (const GpuProcess& p : s.procs) {
-        o << fmt("  [%s%d] %s=%u  %s  %s=%s  %s=%d%%  ", tr(S_GPU), p.gpu, tr(S_PID), p.pid, p.user.c_str(), tr(S_MEM),
-                 p.mem_bytes ? fmt_bytes(p.mem_bytes).c_str() : "N/A", tr(S_SM), std::max(p.sm_util, 0))
+        o << fmt("  [%s%d] %s=%u  %s  %s=%s  %s=%d%%  %s=%s  ", tr(S_GPU), p.gpu, tr(S_PID), p.pid, p.user.c_str(), tr(S_MEM),
+                 p.mem_bytes ? fmt_bytes(p.mem_bytes).c_str() : "N/A", tr(S_SM), std::max(p.sm_util, 0), tr(S_CPU),
+                 p.cpu_pct >= 0 ? fmt("%.0f%%", p.cpu_pct).c_str() : "N/A")
           << (p.cmdline.empty() ? p.name : p.cmdline) << "\n";
     }
 
@@ -655,25 +660,43 @@ static float draw_ui(App& a) {
         ImGui::TextColored(ImVec4(a.cfg.accent[0], a.cfg.accent[1], a.cfg.accent[2], 1), "%s", p.name.c_str());
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s\n%s: %s  %s: %u", p.cmdline.c_str(), tr(S_USER), p.user.c_str(), tr(S_PID), p.pid);
+        std::string cpu = p.cpu_pct >= 0 ? fmt(" · %s %.0f%%", tr(S_CPU), p.cpu_pct) : "";
+        std::string detail = fmt("%u · %s · %s %d%%%s", p.pid, p.mem_bytes ? fmt_bytes(p.mem_bytes).c_str() : "N/A",
+                                 tr(S_SM), std::max(p.sm_util, 0), cpu.c_str());
         ImGui::SameLine();
-        ImGui::TextDisabled("%u · %s · %s %d%%", p.pid, p.mem_bytes ? fmt_bytes(p.mem_bytes).c_str() : "N/A", tr(S_SM),
-                            std::max(p.sm_util, 0));
+        if (ImGui::CalcTextSize(detail.c_str()).x > ImGui::GetContentRegionAvail().x) ImGui::NewLine();  // wrap if narrow
+        ImGui::TextDisabled("%s", detail.c_str());
     }
 
     if (a.cfg.show_procs && s.procs.size() > 1) {
         ImGuiTableFlags tf = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg | ImGuiTableFlags_NoBordersInBody |
                              ImGuiTableFlags_Sortable;
-        if (ImGui::BeginTable("##procs", 4, tf)) {
-            const ImGuiTableColumnFlags ns = ImGuiTableColumnFlags_NoSort | ImGuiTableColumnFlags_WidthStretch;
-            const ImGuiTableColumnFlags sd = ImGuiTableColumnFlags_PreferSortDescending | ImGuiTableColumnFlags_WidthStretch;
-            ImGui::TableSetupColumn(tr(S_PROCESS), ns, 3.0f);
-            ImGui::TableSetupColumn(tr(S_PID), ns, 1.2f);
-            ImGui::TableSetupColumn(tr(S_MEM), sd | (a.cfg.sort_by == 0 ? ImGuiTableColumnFlags_DefaultSort : 0), 1.6f, 2);
-            ImGui::TableSetupColumn(tr(S_SM), sd | (a.cfg.sort_by == 1 ? ImGuiTableColumnFlags_DefaultSort : 0), 0.9f, 3);
+        if (ImGui::BeginTable("##procs", PC_COUNT, tf)) {
+            auto col = [&](const char* label, int id, float weight) {
+                ImGuiTableColumnFlags f = ImGuiTableColumnFlags_WidthStretch;
+                if (id != PC_NAME) f |= ImGuiTableColumnFlags_PreferSortDescending;
+                if (id == a.cfg.sort_col)
+                    f |= ImGuiTableColumnFlags_DefaultSort |
+                         (a.cfg.sort_desc ? ImGuiTableColumnFlags_PreferSortDescending : ImGuiTableColumnFlags_PreferSortAscending);
+                ImGui::TableSetupColumn(label, f, weight, (ImGuiID)id);
+            };
+            col(tr(S_PROCESS), PC_NAME, 2.6f);
+            col(tr(S_PID), PC_PID, 1.2f);
+            col(tr(S_MEM), PC_MEM, 1.6f);
+            col(tr(S_SM), PC_SM, 0.9f);
+            col(tr(S_CPU), PC_CPU, 1.0f);
             if (ImGuiTableSortSpecs* ss = ImGui::TableGetSortSpecs())
-                if (ss->SpecsDirty && ss->SpecsCount > 0) {
-                    int want = ss->Specs[0].ColumnUserID == 3 ? 1 : 0;
-                    if (want != a.cfg.sort_by) { a.cfg.sort_by = want; a.mark_dirty(); }
+                if (ss->SpecsDirty) {
+                    if (ss->SpecsCount > 0) {
+                        int c = (int)ss->Specs[0].ColumnUserID;
+                        bool d = ss->Specs[0].SortDirection == ImGuiSortDirection_Descending;
+                        if (c != a.cfg.sort_col || d != a.cfg.sort_desc) {
+                            a.cfg.sort_col = c;
+                            a.cfg.sort_desc = d;
+                            a.mark_dirty();
+                            sort_procs(a);  // apply this frame, not next
+                        }
+                    }
                     ss->SpecsDirty = false;
                 }
             ImGui::PushStyleColor(ImGuiCol_TableRowBg, ImVec4(1, 1, 1, 0.0f));
@@ -691,6 +714,9 @@ static float draw_ui(App& a) {
                 ImGui::TextUnformatted(p.mem_bytes ? fmt_bytes(p.mem_bytes).c_str() : "—");
                 ImGui::TableNextColumn();
                 ImGui::Text("%d%%", std::max(p.sm_util, 0));
+                ImGui::TableNextColumn();
+                if (p.cpu_pct >= 0) ImGui::Text("%.0f%%", p.cpu_pct);
+                else ImGui::TextUnformatted("—");
             }
             ImGui::PopStyleColor(2);
             ImGui::EndTable();
@@ -762,9 +788,24 @@ static void draw_grip(App& a, ImVec2 size) {
 }
 
 static void sort_procs(App& a) {
-    if (a.cfg.sort_by == 1)
-        std::stable_sort(a.snap.procs.begin(), a.snap.procs.end(),
-                         [](const GpuProcess& x, const GpuProcess& y) { return x.sm_util > y.sm_util; });
+    const int col = a.cfg.sort_col;
+    const bool desc = a.cfg.sort_desc;
+    auto key_cmp = [col](const GpuProcess& x, const GpuProcess& y) -> int {  // <0, 0, >0 ascending
+        auto c3 = [](auto u, auto v) { return u < v ? -1 : u > v ? 1 : 0; };
+        switch (col) {
+            case PC_NAME: return x.name.compare(y.name);
+            case PC_PID: return c3(x.pid, y.pid);
+            case PC_SM: return c3(x.sm_util, y.sm_util);
+            case PC_CPU: return c3(x.cpu_pct, y.cpu_pct);
+            default: return c3(x.mem_bytes, y.mem_bytes);
+        }
+    };
+    std::stable_sort(a.snap.procs.begin(), a.snap.procs.end(), [&](const GpuProcess& x, const GpuProcess& y) {
+        int c = key_cmp(x, y);
+        if (c != 0) return desc ? c > 0 : c < 0;
+        if (x.mem_bytes != y.mem_bytes) return x.mem_bytes > y.mem_bytes;  // stable tie-break
+        return x.pid < y.pid;
+    });
 }
 
 static void update_history(App& a) {

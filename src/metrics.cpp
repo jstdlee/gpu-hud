@@ -149,6 +149,32 @@ struct Metrics::Impl {
     std::vector<unsigned long long> nv_last_ts;
     std::vector<AmdCard> amd;
     unsigned long long cpu_prev_total = 0, cpu_prev_idle = 0;
+    struct CpuMark { unsigned long long ticks; double t; };
+    std::map<unsigned, CpuMark> proc_cpu;  // pid -> last utime+stime sample
+
+    static double now_s() {
+        return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // CPU% of one process since its previous sample (100% = one full core).
+    double proc_cpu_pct(unsigned pid, std::map<unsigned, CpuMark>& next) {
+        std::string st = read_file("/proc/" + std::to_string(pid) + "/stat");
+        size_t rp = st.rfind(')');  // comm may contain spaces/parens
+        if (rp == std::string::npos) return -1;
+        std::istringstream in(st.substr(rp + 2));
+        std::string f;
+        unsigned long long utime = 0, stime = 0;
+        for (int i = 3; i <= 15 && in >> f; i++) {  // fields 14/15 = utime/stime
+            if (i == 14) utime = std::stoull(f);
+            if (i == 15) stime = std::stoull(f);
+        }
+        CpuMark cur{utime + stime, now_s()};
+        next[pid] = cur;
+        auto it = proc_cpu.find(pid);
+        if (it == proc_cpu.end() || cur.t <= it->second.t || cur.ticks < it->second.ticks) return -1;
+        static const double hz = (double)sysconf(_SC_CLK_TCK);
+        return double(cur.ticks - it->second.ticks) / hz / (cur.t - it->second.t) * 100.0;
+    }
 
     void init() {
         have_nvml = nvml.load();
@@ -334,6 +360,9 @@ struct Metrics::Impl {
         sample_system(s);
         if (have_nvml) sample_nvidia(s);
         sample_amd(s);
+        std::map<unsigned, CpuMark> next;
+        for (GpuProcess& p : s.procs) p.cpu_pct = proc_cpu_pct(p.pid, next);
+        proc_cpu.swap(next);  // drops exited processes
         std::sort(s.procs.begin(), s.procs.end(), [](const GpuProcess& a, const GpuProcess& b) {
             if (a.mem_bytes != b.mem_bytes) return a.mem_bytes > b.mem_bytes;
             return a.sm_util > b.sm_util;

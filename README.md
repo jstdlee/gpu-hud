@@ -6,7 +6,7 @@ A small always-on-top, see-through GPU monitor for Linux. Built with Dear ImGui,
 
 - GPU utilization, VRAM, temperature, power and clock, with a history graph for each GPU
 - System RAM, CPU and swap
-- The top GPU process, plus a sortable list of GPU processes (click the Mem or SM column header)
+- The top GPU process, plus a list of GPU processes with GPU memory, SM % and CPU % (click any column header to sort; click again to reverse)
 - **Copy all** puts a full report on the clipboard: live metrics, OS, CPU, memory, motherboard/BIOS, GPU driver/CUDA/PCI/UUID, displays and storage
 - 10 UI languages, all UTF-8: English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch, Русский, Português. The CJK font is picked per language through fontconfig, and you can switch languages without restarting.
 - Separate sliders for background opacity and content opacity, plus background and accent colors

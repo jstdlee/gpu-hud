@@ -14,6 +14,7 @@ struct GpuProcess {
     int gpu = 0;
     uint64_t mem_bytes = 0;   // 0 when the driver does not report it
     int sm_util = -1;         // -1 = unknown
+    double cpu_pct = -1;      // % of one core (top-style), -1 = not yet known
     std::string name;         // /proc/<pid>/comm
     std::string cmdline;
     std::string user;
